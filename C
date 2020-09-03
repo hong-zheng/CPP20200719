@@ -1,0 +1,162 @@
+一、C和C++编程的祸根：内存错误
+内存错误类别
+1、内存泄漏；
+2、错误分配，包括大量增加的free()释放的内存和未初始化的引用；
+3、悬空指针；
+4、数组边界违规；
+
+1、内存泄漏
+再分配资源的时候会发生内存泄漏，但是它从不回收。
+以下是一个可能出错的模型：
+void f1(char* explanation){
+	char p1 ;
+	p1 = malloc(100) ;
+	(void)sprintf(p1,"The f1 error occurred because of '%s'.",explanation) ;
+	local_log(p1) ;
+}
+
+如果local_log()中对p1有free()释放内存，或者具有不寻常的响应能力，否则每次对f1的调用都会泄漏100个字节
+在 记忆棒 增量分发数兆字节内存时，一次泄漏是微不足道的，到那时连续操作数小时后，即使如此小的泄漏也会削弱应用程序
+
+ps1：记忆棒：全称 Memory Stick,由日本索尼公司最早研发出来的移动存储媒体。记忆棒用在索尼的PSP，PSX系列的游戏机，树吗相机，树吗摄像机，索尼爱立信的手机
+还有笔记本上，用于存储数据，相当于计算机的硬盘。
+
+
+FILE句柄也是资源：
+来自资源错误管理的潜在堆内存丢失：
+int getkey(char* filename){
+	FILE* fp ;
+	int key ;
+
+	fp = fopen(filename,"r") ;
+	fscanf(fp,"%d",&key);
+	return key ;
+}
+
+注意：fopen的语义需要补充性的fclose。在没有fclose的情况下，C标准制定发生的情况时，很可能时内存泄漏。
+其他情况：信号量、网络句柄、数据库连接等等。
+
+2、内存错误分配
+内存分配的管理不是很困难，如下：
+未初始化指针：
+void f2(int fatum){
+	int* p2 ;
+	// No one has initialized p2
+	*P = datum ;
+}
+
+注意：一般情况没问题。在AIX下，对未初始化指针的分配通常会立即导致
+segmentation fault错误。
+
+ps2：AIX：时IBM基于AT&T Unix System V开发的一套类UNIX操作系统，运行在IBM专用的Power系列芯片设计的小型机硬件系统上。
+AIX：Advanced Interactive eXecutive
+IBM：IT公司-国际商业机器公司
+	International Business Machines Corporation
+
+
+两个错误的内存释放：
+// allocate once , free twice
+void f3(){
+	char *p ;
+	p = malloc(10) ;
+	{
+
+	}
+	 free(p) ;
+	{
+
+	}
+	 free(p) ;
+}
+
+// allocate zero times , free once
+void f4(){
+	char* p ;
+	{
+
+	}
+	// p remains uninitialized here.
+	free(p) ;
+}
+
+注意：这些错误在C标准中UB（未定义行为），但是典型的实现将忽略错误或者快速而明确地对它们进行标记；
+
+3、悬空指针
+悬空指针：
+
+void f8(){
+	struct x* xp ;
+	
+	xp = (struct x*)malloc(sizeof(struct x)) ;
+	xp.q = 13 ;
+	{
+
+	}
+	free(xp) ;
+	{
+		/* Problem There's no gurantee that
+			the memory block to which xp pointers
+				hasn't been overwritten
+		*/ 
+	}
+	return xp.q ;
+}
+传统的“调试“难以隔离悬空指针。由于：
+a)即使影响提前释放内存范围的代码已本地化，内存的使用仍然取决于应用程序甚至（在极端的情况下）不通进程的其他执行位置；
+b)悬空指针可能发生在以微妙方式使用内存的代码中。结果是，即使内存在释放后立即被覆盖，并且新指向的值不同于预期值，也很难识别出新值是错误值，
+悬空指针不断威胁着C和C++程序的运行状态；
+
+4、数组边界违规
+内存中数据分配的布局非常复杂并且难以实现，所以任何症状都不可能追溯到源代码级别的具体错误。
+
+编码风格：
+
+识别资源的源代码实例：
+/*
+Note that any function incoking protected_file_read()
+assums responsibility ecentually to fclose() its return value
+,UNLESS that value is NULL.
+*/
+FILE* protected_file_read(char*filename){
+	FILE* fp;
+
+	fp = fopen(filename,"r") ;
+	if(fp){
+
+	}else{
+
+	}
+	return fp ;
+}
+
+可以使用以下方法解决内存问题：
+a)专用库；
+b)语言；
+c)软件工具；
+
+通过少量的时间和适当的文本搜索，能够快速的验证平衡的*alloc()和free()或者new和delete的源主体
+
+static char *important_pointer = NULL;
+void f9()
+{
+    if (!important_pointer) 
+    important_pointer = malloc(IMPORTANT_SIZE);
+        ...
+    if (condition)
+        /* Ooops!  We just lost the reference 
+           important_pointer already held. */
+    important_pointer = malloc(DIFFERENT_SIZE);
+        ...
+}
+如果condition为真，简单使用自动运行时工具不能检测的内存泄漏。仔细进行源分析可以从此类条件推理出证实正确的结论。
+ps3：lint是著名的C语言工具之一，由贝尔实验室在PCC（Portable Compiler）基础上开发的静态代码分析，一般是由UNIX系统提供。
+静态的自动语法分析：
+与大多数C语言编译器相比，lint可以对程序进行更加广泛的错误分析，是一种更加严密的编译工具。最初，lint这个工具用来扫描C源文件并
+对源程序中不可移植的代码提出警告。但是现在大多数lint实用程序已经变得更加严密，它不但可以检查出可移植性问
+题，而且可以检查出那些虽然可移植并且完全合乎语法但却很可能是错误的特性。
+
+当然，并不是只有人类才能读取源代码。您还应使静态语法分析成为开发流程的一部分。静态语法分析是lint、严格编译 和集中商业产品执行的内容：扫描编译器接受的源文本
+和目标项。
+
+
+
